@@ -20,149 +20,66 @@
  **/
 
 
-#include <orthanc/OrthancCPlugin.h>
+#include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
+#include <Logging.h>
+#include "StorageArea.h"
+
+#include <DicomFormat/DicomInstanceHasher.h>
+#include <DicomFormat/DicomMap.h>
+#include <SerializationToolbox.h>
+#include <SystemToolbox.h>
 
 #include <string.h>
 #include <stdio.h>
 #include <string>
 
-
+static std::unique_ptr<StorageArea>  storageArea_;
 static OrthancPluginContext* context = NULL;
-
-
-static std::string GetPath(const char* uuid)
-{
-  return "plugin_" + std::string(uuid);
-}
-
-
-static bool ReadFile(std::string& content,
-                     const std::string& path)
-{
-  FILE* fp = fopen(path.c_str(), "rb");
-  if (!fp)
-  {
-    return false;
-  }
-
-  if (fseek(fp, 0, SEEK_END) < 0)
-  {
-    fclose(fp);
-    return false;
-  }
-
-  long size = ftell(fp);
-
-  if (fseek(fp, 0, SEEK_SET) < 0)
-  {
-    fclose(fp);
-    return false;
-  }
-  else
-  {
-    content.resize(size);
-
-    if (size != 0)
-    {
-      bool success = (fread(&content[0], size, 1, fp) == 1);
-      fclose(fp);
-      return success;
-    }
-    else
-    {
-      fclose(fp);
-      return true;
-    }
-  }
-}
-
+static std::string storage_directory;
 
 static OrthancPluginErrorCode StorageCreate(const char* uuid,
                                             const void* content,
                                             int64_t size,
                                             OrthancPluginContentType type)
 {
-  std::string path = GetPath(uuid);
 
-  FILE* fp = fopen(path.c_str(), "wb");
-  if (!fp)
+  try
   {
-    return OrthancPluginErrorCode_StorageAreaPlugin;
-  }
-
-  bool ok = fwrite(content, size, 1, fp) == 1;
-  fclose(fp);
-
-  return ok ? OrthancPluginErrorCode_Success : OrthancPluginErrorCode_StorageAreaPlugin;
-}
-
-
-#if USE_LEGACY_API == 1
-static OrthancPluginErrorCode StorageRead(void** content,
-                                          int64_t* size,
-                                          const char* uuid,
-                                          OrthancPluginContentType type)
-{
-  const std::string path = GetPath(uuid);
-
-  std::string s;
-  if (ReadFile(s, path))
-  {
-    *size = s.size();
-
-    if (s.size() == 0)
-    {
-      *content = NULL;
-    }
-    else
-    {
-      *content = malloc(s.size());
-      if (*content == NULL)
-      {
-        return OrthancPluginErrorCode_StorageAreaPlugin;
-      }
-
-      if (!s.empty())
-      {
-        memcpy(*content, s.c_str(), s.size());
-      }
-    }
-
+    std::string instanceId;
+    storageArea_->Create(uuid, content, size);
+    
     return OrthancPluginErrorCode_Success;
   }
-  else
+  catch (Orthanc::OrthancException& e)
   {
-    return OrthancPluginErrorCode_StorageAreaPlugin;
+    OrthancPluginLogError(context, e.What());
+    return static_cast<OrthancPluginErrorCode>(e.GetErrorCode());
+  }
+  catch (...)
+  {
+    return OrthancPluginErrorCode_InternalError;
   }
 }
 
-#else
 
 static OrthancPluginErrorCode StorageReadWhole(OrthancPluginMemoryBuffer64* target,
                                                const char* uuid,
                                                OrthancPluginContentType type)
 {
-  const std::string path = GetPath(uuid);
-
-  std::string s;
-  if (ReadFile(s, path))
+  try
   {
-    if (OrthancPluginCreateMemoryBuffer64(context, target, s.size()) != OrthancPluginErrorCode_Success)
-    {
-      return OrthancPluginErrorCode_NotEnoughMemory;
-    }
-
-    if (!s.empty())
-    {
-      memcpy(target->data, s.c_str(), s.size());
-    }
-
+    storageArea_->ReadWhole(target, uuid);
     return OrthancPluginErrorCode_Success;
   }
-  else
+  catch (Orthanc::OrthancException& e)
   {
-    return OrthancPluginErrorCode_StorageAreaPlugin;
-  }  
+    OrthancPluginLogError(context, e.What());
+    return static_cast<OrthancPluginErrorCode>(e.GetErrorCode());
+  }
+  catch (...)
+  {
+    return OrthancPluginErrorCode_InternalError;
+  }
 }
 
 static OrthancPluginErrorCode StorageReadRange(OrthancPluginMemoryBuffer64* target,
@@ -170,49 +87,40 @@ static OrthancPluginErrorCode StorageReadRange(OrthancPluginMemoryBuffer64* targ
                                                OrthancPluginContentType type,
                                                uint64_t rangeStart)
 {
-  const size_t rangeSize = target->size;  // The buffer is allocated by Orthanc
-  const std::string path = GetPath(uuid);
-
-  std::string s;
-
-  if (rangeSize == 0)
+  try
   {
+    storageArea_->ReadRange(target, uuid, rangeStart);
     return OrthancPluginErrorCode_Success;
   }
-  else if (ReadFile(s, path))
+  catch (Orthanc::OrthancException& e)
   {
-    if (rangeStart + rangeSize > s.size())
-    {
-      return OrthancPluginErrorCode_BadRange;
-    }
-    else
-    {
-      memcpy(target->data, &s[rangeStart], rangeSize);
-    }
-
-    return OrthancPluginErrorCode_Success;
+    OrthancPluginLogError(context, e.What());
+    return static_cast<OrthancPluginErrorCode>(e.GetErrorCode());
   }
-  else
+  catch (...)
   {
-    return OrthancPluginErrorCode_StorageAreaPlugin;
-  }  
+    return OrthancPluginErrorCode_InternalError;
+  }
 }
-
-#endif
 
 
 static OrthancPluginErrorCode StorageRemove(const char* uuid,
                                             OrthancPluginContentType type)
 {
-  std::string path = GetPath(uuid);
-
-  if (remove(path.c_str()) == 0)
+  try
   {
+    std::string externalPath;
+    storageArea_->RemoveAttachment(uuid);  
     return OrthancPluginErrorCode_Success;
   }
-  else
+  catch (Orthanc::OrthancException& e)
   {
-    return OrthancPluginErrorCode_StorageAreaPlugin;
+    OrthancPluginLogError(context, e.What());
+    return static_cast<OrthancPluginErrorCode>(e.GetErrorCode());
+  }
+  catch (...)
+  {
+    return OrthancPluginErrorCode_InternalError;
   }
 }
 
@@ -237,11 +145,17 @@ extern "C"
       return -1;
     }
 
-#if USE_LEGACY_API == 1
-    OrthancPluginRegisterStorageArea(context, StorageCreate, StorageRead, StorageRemove);
-#else
+    // get orthanc storage directory
+    OrthancPlugins::OrthancConfiguration configuration;    
+    if (configuration.LookupStringValue(storage_directory, "StorageDirectory")) {
+      OrthancPluginLogWarning(context, ("Using base storage directory: " + storage_directory).c_str());
+    } else {
+      OrthancPluginLogWarning(context, "No StorageDirectory configuration set");
+      return 0;
+    } 
+    
+    storageArea_.reset(new StorageArea(configuration.GetStringValue(storage_directory, "OrthancStorage")));
     OrthancPluginRegisterStorageArea2(context, StorageCreate, StorageReadWhole, StorageReadRange, StorageRemove);
-#endif
 
     return 0;
   }
