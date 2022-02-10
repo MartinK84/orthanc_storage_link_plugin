@@ -30,48 +30,71 @@
 #include <string>
 #include <filesystem>
 
-
-
 static OrthancPluginContext* context = NULL;
 std::string storage_directory;
 std::string link_directory;
 
-
-static std::string GetPath(const char* uuid)
-{
-  return storage_directory + std::filesystem::path::preferred_separator + std::string(uuid);
-}
-
 OrthancPluginErrorCode OnStoredCallback(const OrthancPluginDicomInstance* instance,
                                         const char* instanceId)
 {
-  std::string uuid(instanceId);
+  char info[1024];
 
+  // Get DICOM Header for that instance and retrieve PatientID, StudyInstanceUID, SeriesInstanceUID and SOPInstanceUID
   OrthancPlugins::OrthancString s;
   Json::Value json;
   s.Assign(OrthancPluginGetInstanceJson(context, instance));
-  OrthancPluginLogWarning(context, s.GetContent());
+  //OrthancPluginLogWarning(context, s.GetContent());
   s.ToJson(json);
   std::string patientID = json["0010,0020"]["Value"].asString();
   std::string studyUID = json["0020,000d"]["Value"].asString();
   std::string seriesUID = json["0020,000e"]["Value"].asString();
+  std::string sopUID = json["0008,0018"]["Value"].asString();
+  if ((patientID.empty()) || (studyUID.empty()) || (seriesUID.empty()) || (sopUID.empty())) {
+    sprintf(info, "Failed to get instance UIDs for instance %s", instanceId);
+    OrthancPluginLogError(context, info);
+    return OrthancPluginErrorCode_Success;
+  }
+
+  // Build target path
   std::string target = link_directory + std::filesystem::path::preferred_separator +
                        patientID + std::filesystem::path::preferred_separator +
                        studyUID + std::filesystem::path::preferred_separator +
-                       seriesUID + uuid;
-  
-  std::string source = storage_directory + std::filesystem::path::preferred_separator +
-                       std::string(&uuid[0], &uuid[2]) + std::filesystem::path::preferred_separator +
-                       std::string(&uuid[2], &uuid[4]);  
-  
-  OrthancPluginLogWarning(context, instanceId);
-  OrthancPluginLogWarning(context, source.c_str());
-  OrthancPluginLogWarning(context, target.c_str());
-  //std::cout << s.c_str() << std::endl;
-  // Make link and directories
-  //std::string command1 = "gdcmconv --j2k " + uncompressed + " " + compressed;
-  //system(command1.c_str());
+                       seriesUID + std::filesystem::path::preferred_separator;
 
+  // Query to retrieve FileUuid of that instance    
+  std::string fileuuid;
+  OrthancPluginMemoryBuffer tmp;  
+  memset(&tmp, 0, sizeof(tmp));
+  sprintf(info, "/instances/%s/attachments/dicom/info", instanceId);
+  if (OrthancPluginRestApiGet(context, &tmp, info) == OrthancPluginErrorCode_Success)
+  {
+    std::string rest_result;
+    Json::Value json_rest_result;
+    rest_result.assign(reinterpret_cast<const char*>(tmp.data), tmp.size);
+    OrthancPlugins::ReadJson(json_rest_result, rest_result);
+    fileuuid = json_rest_result["Uuid"].asString();
+    OrthancPluginFreeMemoryBuffer(context, &tmp);
+  } else {
+    sprintf(info, "Failed to retrieve attachmend uuid for instance %s", instanceId);
+    OrthancPluginLogError(context, info);
+    return OrthancPluginErrorCode_Success; // return sucess nevertheless, link creation is only secondary
+  }
+
+  // Build source path
+  std::string source = storage_directory + std::filesystem::path::preferred_separator +
+                       std::string(&fileuuid[0], &fileuuid[2]) + std::filesystem::path::preferred_separator +
+                       std::string(&fileuuid[2], &fileuuid[4]) + std::filesystem::path::preferred_separator + 
+                       fileuuid;  
+  
+  //OrthancPluginLogWarning(context, instanceId);
+  //OrthancPluginLogWarning(context, source.c_str());
+  //OrthancPluginLogWarning(context, (target + sopUID).c_str());
+
+  // Create output directory and symbolic link
+  if (!std::filesystem::exists(target + sopUID)) {
+    std::filesystem::create_directories(target);
+    std::filesystem::create_symlink(source, target + sopUID);
+  }
 
   return OrthancPluginErrorCode_Success;
 }
@@ -144,6 +167,6 @@ extern "C"
 
   ORTHANC_PLUGINS_API const char* OrthancPluginGetVersion()
   {
-    return "1.0";
+    return "0.1";
   }
 }
