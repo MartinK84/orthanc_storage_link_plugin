@@ -17,19 +17,56 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
 cmake_minimum_required(VERSION 2.8)
 
-project(Basic)
+project(StorageLink)
+
+SET(STORAGELINK_VERSION "0.1" CACHE STRING "Version of the plugin")
+
+SET(STATIC_BUILD OFF CACHE BOOL "Static build of the third-party libraries (necessary for Windows)")
+SET(ALLOW_DOWNLOADS OFF CACHE BOOL "Allow CMake to download packages")
+
+SET(USE_SYSTEM_JSONCPP ON CACHE BOOL "Use the system version of JsonCpp")
+SET(USE_SYSTEM_BOOST ON CACHE BOOL "Use the system version of boost")
 
 include(${CMAKE_SOURCE_DIR}/../orthanc/OrthancServer/Plugins/Samples/Common/OrthancPlugins.cmake)
+include(${CMAKE_SOURCE_DIR}/../orthanc/OrthancFramework/Resources/CMake/JsonCppConfiguration.cmake)
+include(${CMAKE_SOURCE_DIR}/../orthanc/OrthancFramework/Resources/CMake/BoostConfiguration.cmake)
 
-set(USE_LEGACY_API OFF CACHE BOOL "Whether to enable support for read-range")
+add_library(StorageLink_ChangeCallback SHARED 
+  StorageLink_ChangeCallback/Plugin.cpp
+  ${CMAKE_SOURCE_DIR}/../orthanc/OrthancServer/Plugins/Samples/Common/OrthancPluginCppWrapper.cpp
+  ${JSONCPP_SOURCES}
+  ${BOOST_SOURCES}
+  )
 
-if (USE_LEGACY_API)
-  add_definitions(-DUSE_LEGACY_API=1)
+add_library(StorageLink_StorageArea SHARED 
+  StorageLink_StorageArea/Plugin.cpp
+  ${CMAKE_SOURCE_DIR}/../orthanc/OrthancServer/Plugins/Samples/Common/OrthancPluginCppWrapper.cpp
+  ${JSONCPP_SOURCES}
+  ${BOOST_SOURCES}
+  )
+
+if (ORTHANC_ENABLE_LOGGING)
+  add_definitions(-DORTHANC_ENABLE_LOGGING=1)
 else()
-  add_definitions(-DUSE_LEGACY_API=0)
+  add_definitions(-DORTHANC_ENABLE_LOGGING=0)
 endif()
 
-add_library(PluginTest SHARED Plugin/Plugin.cpp)
+if (ORTHANC_ENABLE_LOGGING_STDIO)
+  add_definitions(-DORTHANC_ENABLE_LOGGING_STDIO=1)
+else()
+  add_definitions(-DORTHANC_ENABLE_LOGGING_STDIO=0)
+endif()
+
+add_definitions(-DHAS_ORTHANC_EXCEPTION=0)
+
+set_target_properties(StorageLink_ChangeCallback PROPERTIES 
+  VERSION ${STORAGELINK_VERSION} 
+  SOVERSION ${STORAGELINK_VERSION})
+
+install(
+  TARGETS StorageLink_ChangeCallback StorageLink_StorageArea
+  RUNTIME DESTINATION lib    # Destination for Windows
+  LIBRARY DESTINATION share/orthanc/plugins    # Destination for Linux
+)
