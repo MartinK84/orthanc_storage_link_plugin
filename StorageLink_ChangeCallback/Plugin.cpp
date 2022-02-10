@@ -22,8 +22,8 @@
 
 
 #include <orthanc/OrthancCPlugin.h>
-#include "../../orthanc/OrthancServer/Plugins/Samples/Common/OrthancPluginCppWrapper.h"
-#include "../../orthanc/OrthancFramework/Sources/Logging.h"
+#include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
+#include <Logging.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -31,8 +31,8 @@
 #include <filesystem>
 
 static OrthancPluginContext* context = NULL;
-std::string storage_directory;
-std::string link_directory;
+static std::string storage_directory;
+static std::string link_directory;
 
 OrthancPluginErrorCode OnStoredCallback(const OrthancPluginDicomInstance* instance,
                                         const char* instanceId)
