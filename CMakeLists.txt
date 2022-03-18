@@ -152,6 +152,8 @@ set_target_properties(StorageLink_ChangeCallback PROPERTIES
   VERSION ${ORTHANC_PLUGIN_VERSION} 
   SOVERSION ${ORTHANC_PLUGIN_VERSION})
 
+target_link_libraries(StorageLink_ChangeCallback stdc++fs)
+
 install(
   TARGETS StorageLink_StorageArea
   RUNTIME DESTINATION lib    # Destination for Windows
