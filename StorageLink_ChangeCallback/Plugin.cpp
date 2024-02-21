@@ -33,6 +33,7 @@
 static OrthancPluginContext* context = NULL;
 static std::string storage_directory;
 static std::string link_directory;
+static std::string link_storage_overwrite;
 
 OrthancPluginErrorCode OnStoredCallback(const OrthancPluginDicomInstance* instance,
                                         const char* instanceId)
@@ -144,6 +145,10 @@ extern "C"
     } else {
       OrthancPluginLogWarning(context, "No LinkDirectory configuration set");
       return 0;
+    }
+    if (storageLink.LookupStringValue(link_storage_overwrite, "LinkStorageOverwrite")) { // overwrite link target for storage directory with custom path
+      storage_directory = link_storage_overwrite;
+      OrthancPluginLogWarning(context, ("Using link storage overwrite: " + link_storage_overwrite).c_str());
     }
 
     OrthancPluginRegisterOnStoredInstanceCallback(context, OnStoredCallback);
