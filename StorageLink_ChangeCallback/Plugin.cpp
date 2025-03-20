@@ -92,13 +92,14 @@ OrthancPluginErrorCode OnStoredCallback(const OrthancPluginDicomInstance* instan
   //OrthancPluginLogWarning(context, (target + sopUID).c_str());
 
   // Create output directory and symbolic link
-  // Create output directory and symbolic link
   if (!std::filesystem::exists(target + sopUID)) {
     try {
       std::filesystem::create_directories(target);
-      if (!std::filesystem::exists(target + sopUID)) {
-        std::filesystem::create_symlink(source, target + sopUID);
+      if (std::filesystem::exists(target + sopUID)) {
+        std::filesystem::remove(target + sopUID);
       }
+        
+      std::filesystem::create_symlink(source, target + sopUID);
     } catch (const std::filesystem::filesystem_error& e) {
       std::string errorMsg = "Error creating symlink: " + (target + sopUID);
       OrthancPluginLogWarning(context, errorMsg.c_str());
