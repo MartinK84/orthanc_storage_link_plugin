@@ -4,7 +4,7 @@
  * Department, University Hospital of Liege, Belgium
  * Copyright (C) 2017-2022 Osimis S.A., Belgium
  * Copyright (C) 2021-2022 Sebastien Jodogne, ICTEAM UCLouvain, Belgium
- * Copyright (C) 2022 Martin Krämer, University Hospital Jena, Germany
+ * Copyright (C) 2022-2025 Martin Krämer, University Hospital Jena, Germany
  *
  * This program is free software: you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -92,9 +92,17 @@ OrthancPluginErrorCode OnStoredCallback(const OrthancPluginDicomInstance* instan
   //OrthancPluginLogWarning(context, (target + sopUID).c_str());
 
   // Create output directory and symbolic link
+  // Create output directory and symbolic link
   if (!std::filesystem::exists(target + sopUID)) {
-    std::filesystem::create_directories(target);
-    std::filesystem::create_symlink(source, target + sopUID);
+    try {
+      std::filesystem::create_directories(target);
+      if (!std::filesystem::exists(target + sopUID)) {
+        std::filesystem::create_symlink(source, target + sopUID);
+      }
+    } catch (const std::filesystem::filesystem_error& e) {
+      std::string errorMsg = "Error creating symlink: " + (target + sopUID);
+      OrthancPluginLogWarning(context, errorMsg.c_str());
+    }
   }
 
   return OrthancPluginErrorCode_Success;
